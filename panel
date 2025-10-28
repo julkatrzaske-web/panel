@@ -15,8 +15,8 @@ NC='\033[0m'
 
 # Ścieżki
 RHOST_DIR="$HOME/.rhost"
-PANEL_FILE="$RHOST_DIR/panel.sh"
-INSTALL_URL="https://raw.githubusercontent.com/julkatrzaske-web/panel/main/panel.sh"
+PANEL_FILE="$RHOST_DIR/panel"
+INSTALL_URL="https://github.com/julkatrzaske-web/panel/blob/ad103930f06a073c3e1a6dc789c7065093ec03b1/panel"
 
 # Funkcje pomocnicze
 error() {
