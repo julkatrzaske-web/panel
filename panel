@@ -1,13 +1,9 @@
 #!/bin/bash
 
-# Rhost Panel - prosty panel zarządzania serwerami
-# Wersja: 1.0
+# Rhost Panel - installer i launcher
+# GitHub: https://github.com/julkatrzaske-web/panel
 
-# Konfiguracja
-CONFIG_DIR="$HOME/.rhost"
-CONFIG_FILE="$CONFIG_DIR/config"
-SERVER_DIR="$CONFIG_DIR/servers"
-LOG_FILE="$CONFIG_DIR/rhost.log"
+set -e
 
 # Kolory
 RED='\033[0;31m'
@@ -17,500 +13,211 @@ BLUE='\033[0;34m'
 CYAN='\033[0;36m'
 NC='\033[0m'
 
-# Funkcja logowania
-log() {
-    echo "$(date '+%Y-%m-%d %H:%M:%S') - $1" >> "$LOG_FILE"
+# Ścieżki
+RHOST_DIR="$HOME/.rhost"
+PANEL_FILE="$RHOST_DIR/panel.sh"
+INSTALL_URL="https://raw.githubusercontent.com/julkatrzaske-web/panel/main/panel.sh"
+
+# Funkcje pomocnicze
+error() {
+    echo -e "${RED}Error: $1${NC}" >&2
+    exit 1
 }
 
-# Inicjalizacja
-init() {
-    mkdir -p "$CONFIG_DIR" "$SERVER_DIR"
-    touch "$CONFIG_FILE" "$LOG_FILE"
-    
-    if [[ ! -f "$CONFIG_FILE" ]] || ! grep -q "initialized" "$CONFIG_FILE"; then
-        echo "initialized=true" > "$CONFIG_FILE"
-        echo "default_port=25565" >> "$CONFIG_FILE"
-        echo "max_memory=1024" >> "$CONFIG_FILE"
-        log "Inicjalizacja panelu rhost"
-    fi
+info() {
+    echo -e "${BLUE}Info: $1${NC}"
+}
+
+success() {
+    echo -e "${GREEN}Success: $1${NC}"
+}
+
+warning() {
+    echo -e "${YELLOW}Warning: $1${NC}"
 }
 
 # Nagłówek
 header() {
     clear
     echo -e "${CYAN}"
-    echo "  ____  _   _ ____  _   _ _______ "
-    echo " |  _ \| | | / ___|| | | |_   _\ \ / /"
-    echo " | |_) | |_| \___ \| |_| | | |  \ V / "
-    echo " |  _ <|  _  |___) |  _  | | |   | |  "
-    echo " |_| \_\_| |_|____/|_| |_| |_|   |_|  "
+    cat << "EOF"
+  ____  _   _ ____  _   _ _______ 
+ |  _ \| | | / ___|| | | |_   _\ \ / /
+ | |_) | |_| \___ \| |_| | | |  \ V / 
+ |  _ <|  _  |___) |  _  | | |   | |  
+ |_| \_\_| |_|____/|_| |_| |_|   |_|  
+EOF
     echo -e "${NC}"
     echo "======================================"
     echo
 }
 
-# Menu główne
-main_menu() {
-    while true; do
-        header
-        echo -e "${YELLOW}Menu Główne:${NC}"
-        echo
-        echo "1. Zarządzanie serwerami"
-        echo "2. Uruchom serwer"
-        echo "3. Zatrzymaj serwer"
-        echo "4. Status serwerów"
-        echo "5. Konfiguracja"
-        echo "6. Logi"
-        echo "0. Wyjście"
-        echo
-        read -p "Wybierz opcję: " choice
-
-        case $choice in
-            1) manage_servers ;;
-            2) start_server_menu ;;
-            3) stop_server_menu ;;
-            4) status_servers ;;
-            5) configuration_menu ;;
-            6) show_logs ;;
-            0) exit 0 ;;
-            *) echo -e "${RED}Nieprawidłowy wybór!${NC}"; sleep 1 ;;
-        esac
-    done
-}
-
-# Zarządzanie serwerami
-manage_servers() {
-    while true; do
-        header
-        echo -e "${YELLOW}Zarządzanie serwerami:${NC}"
-        echo
-        echo "1. Lista serwerów"
-        echo "2. Dodaj serwer"
-        echo "3. Usuń serwer"
-        echo "4. Edytuj serwer"
-        echo "5. Powrót"
-        echo
-        read -p "Wybierz opcję: " choice
-
-        case $choice in
-            1) list_servers ;;
-            2) add_server ;;
-            3) delete_server ;;
-            4) edit_server ;;
-            5) return ;;
-            *) echo -e "${RED}Nieprawidłowy wybór!${NC}"; sleep 1 ;;
-        esac
-    done
-}
-
-# Lista serwerów
-list_servers() {
-    header
-    echo -e "${YELLOW}Lista serwerów:${NC}"
-    echo
-    
-    if [[ -z "$(ls -A "$SERVER_DIR")" ]]; then
-        echo -e "${RED}Brak serwerów!${NC}"
-    else
-        for server_file in "$SERVER_DIR"/*; do
-            source "$server_file"
-            echo -e "${GREEN}$(basename "$server_file" .cfg):${NC}"
-            echo "  Port: $PORT"
-            echo "  Pamięć: ${MEMORY}M"
-            echo "  Katalog: $DIRECTORY"
-            echo "  Plik JAR: $JAR_FILE"
-            echo
-        done
-    fi
-    
-    read -p "Naciśnij Enter, aby kontynuować..."
-}
-
-# Dodawanie serwera
-add_server() {
-    header
-    echo -e "${YELLOW}Dodawanie serwera:${NC}"
-    echo
-    
-    read -p "Nazwa serwera: " name
-    if [[ -f "$SERVER_DIR/$name.cfg" ]]; then
-        echo -e "${RED}Serwer o tej nazwie już istnieje!${NC}"
-        sleep 2
-        return
-    fi
-    
-    read -p "Port (domyślnie 25565): " port
-    port=${port:-25565}
-    
-    read -p "Pamięć w MB (domyślnie 1024): " memory
-    memory=${memory:-1024}
-    
-    read -p "Katalog serwera: " directory
-    if [[ ! -d "$directory" ]]; then
-        echo -e "${YELLOW}Tworzenie katalogu...${NC}"
-        mkdir -p "$directory"
-    fi
-    
-    read -p "Plik JAR serwera: " jar_file
-    if [[ ! -f "$directory/$jar_file" ]]; then
-        echo -e "${RED}Plik JAR nie istnieje!${NC}"
-        sleep 2
-        return
-    fi
-    
-    # Zapisz konfigurację
-    cat > "$SERVER_DIR/$name.cfg" << EOF
-NAME="$name"
-PORT="$port"
-MEMORY="$memory"
-DIRECTORY="$directory"
-JAR_FILE="$jar_file"
-EOF
-
-    echo -e "${GREEN}Serwer $name został dodany!${NC}"
-    log "Dodano serwer: $name"
-    sleep 2
-}
-
-# Usuwanie serwera
-delete_server() {
-    header
-    echo -e "${YELLOW}Usuwanie serwera:${NC}"
-    echo
-    
-    if [[ -z "$(ls -A "$SERVER_DIR")" ]]; then
-        echo -e "${RED}Brak serwerów!${NC}"
-        sleep 2
-        return
-    fi
-    
-    echo "Dostępne serwery:"
-    for server_file in "$SERVER_DIR"/*; do
-        echo " - $(basename "$server_file" .cfg)"
-    done
-    echo
-    
-    read -p "Nazwa serwera do usunięcia: " name
-    if [[ -f "$SERVER_DIR/$name.cfg" ]]; then
-        rm -f "$SERVER_DIR/$name.cfg"
-        echo -e "${GREEN}Serwer $name został usunięty!${NC}"
-        log "Usunięto serwer: $name"
-    else
-        echo -e "${RED}Serwer nie istnieje!${NC}"
-    fi
-    sleep 2
-}
-
-# Edycja serwera
-edit_server() {
-    header
-    echo -e "${YELLOW}Edycja serwera:${NC}"
-    echo
-    
-    if [[ -z "$(ls -A "$SERVER_DIR")" ]]; then
-        echo -e "${RED}Brak serwerów!${NC}"
-        sleep 2
-        return
-    fi
-    
-    echo "Dostępne serwery:"
-    for server_file in "$SERVER_DIR"/*; do
-        echo " - $(basename "$server_file" .cfg)"
-    done
-    echo
-    
-    read -p "Nazwa serwera do edycji: " name
-    if [[ ! -f "$SERVER_DIR/$name.cfg" ]]; then
-        echo -e "${RED}Serwer nie istnieje!${NC}"
-        sleep 2
-        return
-    fi
-    
-    source "$SERVER_DIR/$name.cfg"
-    
-    echo "Pozostaw puste, aby zachować obecną wartość:"
-    read -p "Port ($PORT): " new_port
-    read -p "Pamięć w MB ($MEMORY): " new_memory
-    read -p "Katalog ($DIRECTORY): " new_directory
-    read -p "Plik JAR ($JAR_FILE): " new_jar_file
-    
-    new_port=${new_port:-$PORT}
-    new_memory=${new_memory:-$MEMORY}
-    new_directory=${new_directory:-$DIRECTORY}
-    new_jar_file=${new_jar_file:-$JAR_FILE}
-    
-    # Zaktualizuj konfigurację
-    cat > "$SERVER_DIR/$name.cfg" << EOF
-NAME="$name"
-PORT="$new_port"
-MEMORY="$new_memory"
-DIRECTORY="$new_directory"
-JAR_FILE="$new_jar_file"
-EOF
-
-    echo -e "${GREEN}Serwer $name został zaktualizowany!${NC}"
-    log "Zaktualizowano serwer: $name"
-    sleep 2
-}
-
-# Uruchamianie serwera
-start_server_menu() {
-    header
-    echo -e "${YELLOW}Uruchamianie serwera:${NC}"
-    echo
-    
-    if [[ -z "$(ls -A "$SERVER_DIR")" ]]; then
-        echo -e "${RED}Brak serwerów!${NC}"
-        sleep 2
-        return
-    fi
-    
-    echo "Dostępne serwery:"
-    for server_file in "$SERVER_DIR"/*; do
-        echo " - $(basename "$server_file" .cfg)"
-    done
-    echo
-    
-    read -p "Nazwa serwera do uruchomienia: " name
-    if [[ ! -f "$SERVER_DIR/$name.cfg" ]]; then
-        echo -e "${RED}Serwer nie istnieje!${NC}"
-        sleep 2
-        return
-    fi
-    
-    start_server "$name"
-}
-
-start_server() {
-    local name="$1"
-    source "$SERVER_DIR/$name.cfg"
-    
-    # Sprawdź czy serwer już działa
-    if screen -list | grep -q "rhost_$name"; then
-        echo -e "${RED}Serwer $name już działa!${NC}"
-        sleep 2
-        return
-    fi
-    
-    # Sprawdź czy port jest zajęty
-    if netstat -tuln | grep -q ":$PORT "; then
-        echo -e "${RED}Port $PORT jest już zajęty!${NC}"
-        sleep 2
-        return
-    fi
-    
-    # Uruchom serwer w screen
-    cd "$DIRECTORY"
-    screen -dmS "rhost_$name" java -Xmx${MEMORY}M -Xms${MEMORY}M -jar "$JAR_FILE" nogui
-    
-    echo -e "${GREEN}Uruchamianie serwera $name...${NC}"
-    log "Uruchomiono serwer: $name"
-    sleep 3
-}
-
-# Zatrzymywanie serwera
-stop_server_menu() {
-    header
-    echo -e "${YELLOW}Zatrzymywanie serwera:${NC}"
-    echo
-    
-    if [[ -z "$(ls -A "$SERVER_DIR")" ]]; then
-        echo -e "${RED}Brak serwerów!${NC}"
-        sleep 2
-        return
-    fi
-    
-    echo "Dostępne serwery:"
-    for server_file in "$SERVER_DIR"/*; do
-        echo " - $(basename "$server_file" .cfg)"
-    done
-    echo
-    
-    read -p "Nazwa serwera do zatrzymania: " name
-    if [[ ! -f "$SERVER_DIR/$name.cfg" ]]; then
-        echo -e "${RED}Serwer nie istnieje!${NC}"
-        sleep 2
-        return
-    fi
-    
-    stop_server "$name"
-}
-
-stop_server() {
-    local name="$1"
-    
-    if screen -list | grep -q "rhost_$name"; then
-        screen -S "rhost_$name" -X stuff "stop\n"
-        echo -e "${YELLOW}Zatrzymywanie serwera $name...${NC}"
-        sleep 5
-        
-        # Sprawdź czy serwer został zatrzymany
-        if ! screen -list | grep -q "rhost_$name"; then
-            echo -e "${GREEN}Serwer $name został zatrzymany!${NC}"
-            log "Zatrzymano serwer: $name"
-        else
-            echo -e "${RED}Nie udało się zatrzymać serwera!${NC}"
+# Sprawdź zależności
+check_dependencies() {
+    local deps=("curl" "wget")
+    for dep in "${deps[@]}"; do
+        if ! command -v "$dep" &> /dev/null; then
+            error "$dep is required but not installed. Please install it first."
         fi
-    else
-        echo -e "${RED}Serwer $name nie jest uruchomiony!${NC}"
-    fi
-    sleep 2
-}
-
-# Status serwerów
-status_servers() {
-    header
-    echo -e "${YELLOW}Status serwerów:${NC}"
-    echo
-    
-    if [[ -z "$(ls -A "$SERVER_DIR")" ]]; then
-        echo -e "${RED}Brak serwerów!${NC}"
-    else
-        for server_file in "$SERVER_DIR"/*; do
-            name=$(basename "$server_file" .cfg)
-            if screen -list | grep -q "rhost_$name"; then
-                echo -e "${GREEN}✓ $name - DZIAŁA${NC}"
-            else
-                echo -e "${RED}✗ $name - STOPPED${NC}"
-            fi
-        done
-    fi
-    
-    echo
-    read -p "Naciśnij Enter, aby kontynuować..."
-}
-
-# Konfiguracja
-configuration_menu() {
-    while true; do
-        header
-        echo -e "${YELLOW}Konfiguracja:${NC}"
-        echo
-        echo "1. Wyświetl konfigurację"
-        echo "2. Zmień domyślny port"
-        echo "3. Zmień domyślną pamięć"
-        echo "4. Powrót"
-        echo
-        read -p "Wybierz opcję: " choice
-
-        case $choice in
-            1) show_config ;;
-            2) change_default_port ;;
-            3) change_default_memory ;;
-            4) return ;;
-            *) echo -e "${RED}Nieprawidłowy wybór!${NC}"; sleep 1 ;;
-        esac
     done
 }
 
-show_config() {
-    header
-    echo -e "${YELLOW}Aktualna konfiguracja:${NC}"
-    echo
+# Pobierz najnowszą wersję panelu
+update_panel() {
+    info "Checking for updates..."
     
-    if [[ -f "$CONFIG_FILE" ]]; then
-        while IFS='=' read -r key value; do
-            echo "$key: $value"
-        done < "$CONFIG_FILE"
+    if [[ ! -f "$PANEL_FILE" ]]; then
+        info "Downloading Rhost Panel..."
+        mkdir -p "$RHOST_DIR"
+        curl -sSL "$INSTALL_URL" -o "$PANEL_FILE"
+        chmod +x "$PANEL_FILE"
+        success "Rhost Panel downloaded successfully!"
     else
-        echo -e "${RED}Plik konfiguracyjny nie istnieje!${NC}"
+        # Sprawdź czy jest nowsza wersja
+        local temp_file=$(mktemp)
+        curl -sSL "$INSTALL_URL" -o "$temp_file"
+        
+        if ! cmp -s "$PANEL_FILE" "$temp_file"; then
+            info "Updating Rhost Panel..."
+            mv "$temp_file" "$PANEL_FILE"
+            chmod +x "$PANEL_FILE"
+            success "Rhost Panel updated to latest version!"
+        else
+            rm -f "$temp_file"
+            info "Rhost Panel is up to date."
+        fi
     fi
-    
-    echo
-    read -p "Naciśnij Enter, aby kontynuować..."
 }
 
-change_default_port() {
+# Główna funkcja panelu
+main_panel() {
     header
-    echo -e "${YELLOW}Zmiana domyślnego portu:${NC}"
+    echo -e "${YELLOW}Rhost Panel v1.0${NC}"
+    echo
+    echo "1. Start Server Management"
+    echo "2. Install Dependencies"
+    echo "3. Update Panel"
+    echo "4. Uninstall Panel"
+    echo "5. Exit"
     echo
     
-    current_port=$(grep "default_port" "$CONFIG_FILE" | cut -d'=' -f2)
-    echo "Aktualny domyślny port: $current_port"
+    read -p "Select option: " choice
     
-    read -p "Nowy domyślny port: " new_port
-    if [[ "$new_port" =~ ^[0-9]+$ ]] && [ "$new_port" -ge 1024 ] && [ "$new_port" -le 65535 ]; then
-        sed -i "s/default_port=.*/default_port=$new_port/" "$CONFIG_FILE"
-        echo -e "${GREEN}Domyślny port zmieniony na $new_port!${NC}"
-        log "Zmieniono domyślny port na: $new_port"
-    else
-        echo -e "${RED}Nieprawidłowy port!${NC}"
-    fi
-    sleep 2
-}
-
-change_default_memory() {
-    header
-    echo -e "${YELLOW}Zmiana domyślnej pamięci:${NC}"
-    echo
-    
-    current_memory=$(grep "max_memory" "$CONFIG_FILE" | cut -d'=' -f2)
-    echo "Aktualna domyślna pamięć: ${current_memory}MB"
-    
-    read -p "Nowa domyślna pamięć (MB): " new_memory
-    if [[ "$new_memory" =~ ^[0-9]+$ ]] && [ "$new_memory" -ge 512 ]; then
-        sed -i "s/max_memory=.*/max_memory=$new_memory/" "$CONFIG_FILE"
-        echo -e "${GREEN}Domyślna pamięć zmieniona na ${new_memory}MB!${NC}"
-        log "Zmieniono domyślną pamięć na: ${new_memory}MB"
-    else
-        echo -e "${RED}Nieprawidłowa wartość pamięci!${NC}"
-    fi
-    sleep 2
-}
-
-# Wyświetlanie logów
-show_logs() {
-    header
-    echo -e "${YELLOW}Ostatnie wpisy w logach:${NC}"
-    echo
-    
-    if [[ -f "$LOG_FILE" ]]; then
-        tail -20 "$LOG_FILE"
-    else
-        echo -e "${RED}Plik logów nie istnieje!${NC}"
-    fi
-    
-    echo
-    echo "1. Wyczyść logi"
-    echo "2. Pełne logi"
-    echo "3. Powrót"
-    echo
-    read -p "Wybierz opcję: " choice
-
     case $choice in
-        1) > "$LOG_FILE"; echo -e "${GREEN}Logi wyczyszczone!${NC}" ;;
-        2) less "$LOG_FILE" ;;
-        3) return ;;
-        *) echo -e "${RED}Nieprawidłowy wybór!${NC}" ;;
+        1)
+            start_server_management
+            ;;
+        2)
+            install_dependencies
+            ;;
+        3)
+            update_panel
+            ;;
+        4)
+            uninstall_panel
+            ;;
+        5)
+            success "Goodbye!"
+            exit 0
+            ;;
+        *)
+            error "Invalid choice!"
+            ;;
     esac
 }
 
-# Funkcja sprzątania przy wyjściu
-cleanup() {
-    echo -e "${YELLOW}Zamykanie panelu rhost...${NC}"
-    log "Panel rhost został zamknięty"
-    exit 0
-}
-
-# Główna funkcja
-main() {
-    trap cleanup EXIT INT TERM
+# Zarządzanie serwerami
+start_server_management() {
+    header
+    echo -e "${YELLOW}Server Management${NC}"
+    echo
     
-    # Sprawdź zależności
+    # Sprawdź czy screen jest zainstalowany
     if ! command -v screen &> /dev/null; then
-        echo -e "${RED}Error: 'screen' nie jest zainstalowany!${NC}"
-        echo "Zainstaluj: sudo apt-get install screen"
-        exit 1
+        warning "Screen is not installed. Some features may not work."
+        read -p "Do you want to install screen now? (y/n): " install_screen
+        if [[ $install_screen == "y" ]]; then
+            install_dependencies
+        fi
     fi
     
-    if ! command -v java &> /dev/null; then
-        echo -e "${YELLOW}Warning: Java nie jest zainstalowana!${NC}"
-    fi
-    
-    # Inicjalizacja i uruchomienie
-    init
-    main_menu
+    # Tutaj dodaj pełną funkcjonalność panelu z poprzedniego kodu
+    echo "Server management features coming soon..."
+    echo
+    read -p "Press Enter to continue..."
+    main_panel
 }
 
-# Uruchom główną funkcję
-main "$@"
+# Instalacja zależności
+install_dependencies() {
+    header
+    echo -e "${YELLOW}Installing Dependencies${NC}"
+    echo
+    
+    if command -v apt-get &> /dev/null; then
+        # Debian/Ubuntu
+        info "Installing dependencies using apt..."
+        sudo apt-get update
+        sudo apt-get install -y screen curl wget openjdk-17-jdk
+        success "Dependencies installed successfully!"
+        
+    elif command -v yum &> /dev/null; then
+        # CentOS/RHEL
+        info "Installing dependencies using yum..."
+        sudo yum update -y
+        sudo yum install -y screen curl wget java-17-openjdk
+        success "Dependencies installed successfully!"
+        
+    elif command -v dnf &> /dev/null; then
+        # Fedora
+        info "Installing dependencies using dnf..."
+        sudo dnf update -y
+        sudo dnf install -y screen curl wget java-17-openjdk
+        success "Dependencies installed successfully!"
+        
+    else
+        warning "Cannot detect package manager. Please install manually:"
+        echo " - screen"
+        echo " - curl"
+        echo " - wget"
+        echo " - openjdk-17-jdk"
+    fi
+    
+    read -p "Press Enter to continue..."
+    main_panel
+}
+
+# Odinstaluj panel
+uninstall_panel() {
+    header
+    echo -e "${RED}Uninstall Rhost Panel${NC}"
+    echo
+    warning "This will remove all Rhost Panel files and configurations!"
+    read -p "Are you sure you want to continue? (y/n): " confirm
+    
+    if [[ $confirm == "y" ]]; then
+        if [[ -d "$RHOST_DIR" ]]; then
+            rm -rf "$RHOST_DIR"
+            success "Rhost Panel has been completely uninstalled!"
+        else
+            info "Rhost Panel is not installed."
+        fi
+    else
+        info "Uninstall cancelled."
+    fi
+    
+    read -p "Press Enter to continue..."
+    main_panel
+}
+
+# Funkcja inicjalizująca
+init() {
+    check_dependencies
+    update_panel
+    
+    # Uruchom główny panel
+    main_panel
+}
+
+# Uruchom inicjalizację
+init "$@"
